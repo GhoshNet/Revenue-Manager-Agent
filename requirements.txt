@@ -1,0 +1,23 @@
+# Core runtime for the agent + tool layer + server (what the deployed web app needs).
+# For the ETL/scraper too, install requirements-etl.txt instead.
+
+# --- DB ---
+psycopg[binary]>=3.1
+python-dateutil>=2.9
+
+# --- Agent / skills ---
+deepagents>=0.6
+langchain-anthropic>=1.0
+langgraph>=1.0
+# Optional pluggable model providers:
+langchain-groq>=0.2      # Groq (Llama 3.3 70B, GPT-OSS); free tier TPM is small
+langchain-ollama>=0.2    # local, free, no key
+
+# --- Serving ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-dotenv>=1.0
+
+# --- Tests ---
+pytest>=8.2
+pyyaml>=6.0

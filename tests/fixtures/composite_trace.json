@@ -1,0 +1,9 @@
+{
+  "question": "What's driving July and how did we book lately?",
+  "note": "Recorded tool-call trace fixture for a composite GM question (no live LLM in CI). A correct decomposition plans the OTB headline + segment drivers, then recent pickup.",
+  "tool_calls": [
+    {"name": "get_otb_summary", "args": {"stay_month": "2026-07"}},
+    {"name": "get_segment_mix", "args": {"stay_month": "2026-07"}},
+    {"name": "get_pickup_delta", "args": {"booking_window_days": 7, "future_stay_from": "2026-07-01"}}
+  ]
+}

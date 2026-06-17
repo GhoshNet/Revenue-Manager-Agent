@@ -1,0 +1,7 @@
+# Full local/dev install = core runtime + the scraper stack.
+# The deployed web service only needs requirements.txt (no browser).
+-r requirements.txt
+
+playwright>=1.44
+beautifulsoup4>=4.12
+lxml>=5.2
