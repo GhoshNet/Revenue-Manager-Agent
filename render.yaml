@@ -1,0 +1,25 @@
+# Render Blueprint. In Render: New → Blueprint → pick this repo.
+# Secrets (sync:false) are entered in the Render dashboard, never in git.
+services:
+  - type: web
+    name: revenue-manager-agent
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn agent.server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.13"
+      - key: AGENT_MODEL_ID
+        value: claude-sonnet-4-6
+      - key: DATABASE_URL          # Neon connection string (?sslmode=require)
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: APP_USERNAME
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
