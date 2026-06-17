@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Revenue Manager Agent — Grand Harbour Hotel</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
   :root { --bg:#0b1220; --panel:#121b2e; --line:#22304d; --txt:#e6edf7; --mut:#8aa0c0; --acc:#4f9dff; }
   * { box-sizing:border-box; }
@@ -19,7 +20,17 @@
   .msg { max-width:760px; margin:0 0 16px; }
   .msg.user { color:var(--acc); }
   .msg .who { font-size:12px; color:var(--mut); margin-bottom:2px; }
-  .msg .body { white-space:pre-wrap; }
+  .msg.user .body { white-space:pre-wrap; }
+  .msg .body > *:first-child { margin-top:0; }
+  .msg .body > *:last-child { margin-bottom:0; }
+  .msg .body h1,.msg .body h2,.msg .body h3 { font-size:15px; margin:14px 0 6px; }
+  .msg .body p { margin:8px 0; }
+  .msg .body ul,.msg .body ol { margin:8px 0; padding-left:22px; }
+  .msg .body table { border-collapse:collapse; margin:10px 0; font-size:13.5px; }
+  .msg .body th,.msg .body td { border:1px solid var(--line); padding:5px 10px; text-align:left; }
+  .msg .body th { background:#0e1729; color:var(--mut); }
+  .msg .body code { background:#0e1729; padding:1px 5px; border-radius:4px; font-size:13px; }
+  .msg .body strong { color:#fff; }
   .ev { font-size:12.5px; padding:7px 9px; border:1px solid var(--line); border-radius:8px; margin-bottom:7px; background:#0e1729; }
   .ev .k { color:var(--acc); font-weight:600; }
   .ev.skill .k { color:#7ee787; }
@@ -72,12 +83,19 @@ const send = document.getElementById("send");
 
 function el(cls, html){ const d=document.createElement("div"); d.className=cls; d.innerHTML=html; return d; }
 function esc(s){ return (s||"").replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
-function addMsg(who, text, cls=""){ const m=el("msg "+cls, `<div class="who">${who}</div><div class="body">${esc(text)}</div>`); chat.appendChild(m); chat.scrollTop=chat.scrollHeight; return m.querySelector(".body"); }
+function addMsg(who, text, cls=""){ const body = (who==="Agent" && window.marked) ? marked.parse(text||"") : esc(text); const m=el("msg "+cls, `<div class="who">${who}</div><div class="body">${body}</div>`); chat.appendChild(m); chat.scrollTop=chat.scrollHeight; return m.querySelector(".body"); }
 function addEvent(node){ events.appendChild(node); events.scrollTop=events.scrollHeight; }
 
 async function loadModels(){
-  const r = await fetch("/models"); const d = await r.json();
-  for(const m of d.models){ const o=document.createElement("option"); o.value=m.id; o.textContent=m.label+(m.available?"":" (no key)"); if(!m.available && m.needs_key) o.disabled=true; if(m.id===d.default) o.selected=true; modelSel.appendChild(o); }
+  // Model switching is disabled for now (only the default model is wired on the
+  // deployed instance). Show the active model, non-interactive.
+  try{
+    const r = await fetch("/models"); const d = await r.json();
+    const def = d.models.find(m=>m.id===d.default) || d.models[0];
+    const o=document.createElement("option"); o.value=def.id; o.textContent=def.label; o.selected=true;
+    modelSel.appendChild(o); modelSel.value=def.id;
+  }catch(e){ const o=document.createElement("option"); o.textContent="Claude Sonnet 4.6"; modelSel.appendChild(o); }
+  modelSel.disabled = true; modelSel.title = "Active model";
 }
 loadModels();
 

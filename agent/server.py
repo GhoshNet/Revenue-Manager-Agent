@@ -127,25 +127,40 @@ def _classify_tool_call(tc: dict) -> dict:
     return {"type": "tool_call", "tool": name, "args": args}
 
 
+def _text_of(message) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, list):
+        return " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+    return content or ""
+
+
 async def _run(agent, payload, config) -> AsyncIterator[str]:
-    """Stream state updates as SSE events; surface tool/skill calls + final text + HITL."""
-    seen = 0
+    """Stream graph *updates* (deltas only — no history replay) as SSE events:
+    tool/skill calls, tool results, the final answer, and the HITL gate."""
+    emitted: set[str] = set()
     try:
-        async for chunk in agent.astream(payload, config=config, stream_mode="values"):
-            msgs = chunk.get("messages", []) if isinstance(chunk, dict) else []
-            for m in msgs[seen:]:
-                mtype = getattr(m, "type", "")
-                for tc in getattr(m, "tool_calls", None) or []:
-                    yield _sse(_classify_tool_call(tc))
-                if mtype == "tool":
-                    yield _sse({"type": "tool_result", "tool": getattr(m, "name", "tool"),
-                                "preview": str(getattr(m, "content", ""))[:240]})
-                if mtype == "ai" and getattr(m, "content", None) and not (getattr(m, "tool_calls", None)):
-                    content = m.content
-                    if isinstance(content, list):
-                        content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
-                    yield _sse({"type": "message", "text": content})
-            seen = len(msgs)
+        async for chunk in agent.astream(payload, config=config, stream_mode="updates"):
+            if not isinstance(chunk, dict):
+                continue
+            for node, update in chunk.items():
+                if node == "__interrupt__" or not isinstance(update, dict):
+                    continue
+                for m in update.get("messages", []) or []:
+                    mid = getattr(m, "id", None)
+                    if mid and mid in emitted:
+                        continue
+                    if mid:
+                        emitted.add(mid)
+                    for tc in getattr(m, "tool_calls", None) or []:
+                        yield _sse(_classify_tool_call(tc))
+                    mtype = getattr(m, "type", "")
+                    if mtype == "tool":
+                        yield _sse({"type": "tool_result", "tool": getattr(m, "name", "tool"),
+                                    "preview": str(getattr(m, "content", ""))[:240]})
+                    elif mtype == "ai" and not (getattr(m, "tool_calls", None)):
+                        text = _text_of(m)
+                        if text.strip():
+                            yield _sse({"type": "message", "text": text})
 
         # Pending human approval? (get_as_of_otb gate)
         snap = await agent.aget_state(config)
