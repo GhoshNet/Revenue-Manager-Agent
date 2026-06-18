@@ -59,7 +59,10 @@
 <header>
   <h1>Revenue Manager Agent</h1>
   <span class="sub">Grand Harbour Hotel · on-the-books intelligence</span>
-  <select id="model" title="Model"></select>
+  <select id="model" title="Choose model">
+    <option value="claude-sonnet-4-6">Claude Sonnet 4.6 · accurate (default)</option>
+    <option value="claude-haiku-4-5">Claude Haiku 4.5 · faster</option>
+  </select>
 </header>
 <main>
   <section id="chat">
@@ -79,7 +82,7 @@
 </form></footer>
 
 <script>
-const thread = "t-" + Math.random().toString(36).slice(2);
+let thread = "t-" + Math.random().toString(36).slice(2);
 const chat = document.getElementById("chat");
 const events = document.getElementById("events");
 const modelSel = document.getElementById("model");
@@ -99,18 +102,13 @@ function esc(s){ return (s||"").replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">
 function addMsg(who, text, cls=""){ const body = (who==="Agent" && window.marked) ? marked.parse(text||"") : esc(text); const m=el("msg "+cls, `<div class="who">${who}</div><div class="body">${body}</div>`); chat.appendChild(m); chat.scrollTop=chat.scrollHeight; return m.querySelector(".body"); }
 function addEvent(node){ events.appendChild(node); events.scrollTop=events.scrollHeight; }
 
-async function loadModels(){
-  // Model switching is disabled for now (only the default model is wired on the
-  // deployed instance). Show the active model, non-interactive.
-  try{
-    const r = await fetch("/models"); const d = await r.json();
-    const def = d.models.find(m=>m.id===d.default) || d.models[0];
-    const o=document.createElement("option"); o.value=def.id; o.textContent=def.label; o.selected=true;
-    modelSel.appendChild(o); modelSel.value=def.id;
-  }catch(e){ const o=document.createElement("option"); o.textContent="Claude Sonnet 4.6"; modelSel.appendChild(o); }
-  modelSel.disabled = true; modelSel.title = "Active model";
-}
-loadModels();
+// Always start on Sonnet after a refresh (ignore any browser form-restore).
+modelSel.selectedIndex = 0;
+// Switching model starts a fresh conversation so the two models never mix mid-thread.
+modelSel.onchange = ()=>{
+  thread = "t-" + Math.random().toString(36).slice(2);
+  addMsg("System", "Switched to " + modelSel.options[modelSel.selectedIndex].text + " — new conversation.", "user");
+};
 
 function ask(text){ q.value=text; form.requestSubmit(); }
 
