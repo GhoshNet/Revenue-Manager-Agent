@@ -1,8 +1,10 @@
-"""Submission-day sync: one fresh scrape -> load BOTH local and Neon -> proofs.
+"""Local sync helper: one fresh scrape -> load BOTH local and Neon -> proofs.
 
 Because the data site regenerates daily, the deployed DB, the committed proofs,
-and the live /verify only agree on the same calendar day. Run this once on
-submission day (on a network where port 5432 to Neon is open, e.g. a hotspot):
+and the live /verify only agree on the same calendar day. The primary, automated
+path is the `daily-sync` GitHub Action (it runs the ETL into Neon on a schedule
+and on demand). This script is the local equivalent when you want to refresh both
+your local Postgres and Neon in one pass:
 
     python scripts/sync_dbs.py
 
