@@ -47,6 +47,12 @@
   .approve .row { display:flex; gap:8px; margin-top:8px; }
   .examples { color:var(--mut); font-size:13px; margin-top:6px; }
   .examples a { color:var(--acc); text-decoration:none; cursor:pointer; }
+  .thinking { display:flex; align-items:center; gap:10px; margin:0 0 16px; color:var(--mut); font-size:13.5px; }
+  .thinking .orb { width:18px; height:18px; border-radius:50%; background:radial-gradient(circle at 30% 30%, #7db8ff, var(--acc)); animation:pulse 1.3s infinite ease-in-out; flex:none; }
+  .thinking .dots i { width:6px; height:6px; margin-right:4px; border-radius:50%; background:var(--acc); display:inline-block; animation:bounce 1.2s infinite ease-in-out; }
+  .thinking .dots i:nth-child(2){ animation-delay:.15s; } .thinking .dots i:nth-child(3){ animation-delay:.3s; }
+  @keyframes bounce { 0%,80%,100%{ transform:scale(.5); opacity:.4; } 40%{ transform:scale(1); opacity:1; } }
+  @keyframes pulse { 0%,100%{ transform:scale(.85); opacity:.7; } 50%{ transform:scale(1.1); opacity:1; } }
 </style>
 </head>
 <body>
@@ -82,6 +88,13 @@ const q = document.getElementById("q");
 const send = document.getElementById("send");
 
 function el(cls, html){ const d=document.createElement("div"); d.className=cls; d.innerHTML=html; return d; }
+let thinkingEl = null;
+function showThinking(label){
+  if(!thinkingEl){ thinkingEl = el("thinking", `<span class="orb"></span><span class="dots"><i></i><i></i><i></i></span><span class="tlabel"></span>`); chat.appendChild(thinkingEl); }
+  thinkingEl.querySelector(".tlabel").textContent = label || "Thinking…";
+  chat.scrollTop = chat.scrollHeight;
+}
+function hideThinking(){ if(thinkingEl){ thinkingEl.remove(); thinkingEl=null; } }
 function esc(s){ return (s||"").replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
 function addMsg(who, text, cls=""){ const body = (who==="Agent" && window.marked) ? marked.parse(text||"") : esc(text); const m=el("msg "+cls, `<div class="who">${who}</div><div class="body">${body}</div>`); chat.appendChild(m); chat.scrollTop=chat.scrollHeight; return m.querySelector(".body"); }
 function addEvent(node){ events.appendChild(node); events.scrollTop=events.scrollHeight; }
@@ -102,29 +115,32 @@ loadModels();
 function ask(text){ q.value=text; form.requestSubmit(); }
 
 async function stream(url, payload){
-  send.disabled = true;
-  const resp = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
-  const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf="";
-  while(true){
-    const {value, done} = await reader.read(); if(done) break;
-    buf += dec.decode(value, {stream:true});
-    let i; while((i = buf.indexOf("\n\n")) >= 0){
-      const line = buf.slice(0, i).trim(); buf = buf.slice(i+2);
-      if(!line.startsWith("data:")) continue;
-      handle(JSON.parse(line.slice(5).trim()));
+  send.disabled = true; showThinking("Thinking…");
+  try {
+    const resp = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
+    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf="";
+    while(true){
+      const {value, done} = await reader.read(); if(done) break;
+      buf += dec.decode(value, {stream:true});
+      let i; while((i = buf.indexOf("\n\n")) >= 0){
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i+2);
+        if(!line.startsWith("data:")) continue;
+        handle(JSON.parse(line.slice(5).trim()));
+      }
     }
-  }
-  send.disabled = false;
+  } catch(err){ addMsg("Error", String(err)); }
+  finally { hideThinking(); send.disabled = false; q.focus(); }
 }
 
 function handle(ev){
-  if(ev.type==="skill_loaded") addEvent(el("ev skill", `<span class="k">▼ skill</span> ${esc(ev.skill)}`));
-  else if(ev.type==="subagent") addEvent(el("ev subagent", `<span class="k">&#8627; subagent</span> ${esc(ev.subagent)}<br><code>${esc(ev.detail)}</code>`));
-  else if(ev.type==="tool_call") addEvent(el("ev tool", `<span class="k">▶ tool</span> ${esc(ev.tool)}<br><code>${esc(JSON.stringify(ev.args))}</code>`));
-  else if(ev.type==="tool_result") addEvent(el("ev", `<span class="k">◀ result</span> ${esc(ev.tool)}<br><code>${esc(ev.preview)}</code>`));
-  else if(ev.type==="message") addMsg("Agent", ev.text);
-  else if(ev.type==="error") addMsg("Error", ev.error);
-  else if(ev.type==="approval_required") approval(ev);
+  if(ev.type==="skill_loaded"){ addEvent(el("ev skill", `<span class="k">▼ skill</span> ${esc(ev.skill)}`)); showThinking(`Loading skill: ${ev.skill}…`); }
+  else if(ev.type==="subagent"){ addEvent(el("ev subagent", `<span class="k">&#8627; subagent</span> ${esc(ev.subagent)}<br><code>${esc(ev.detail)}</code>`)); showThinking(`Delegating to ${ev.subagent}…`); }
+  else if(ev.type==="tool_call"){ addEvent(el("ev tool", `<span class="k">▶ tool</span> ${esc(ev.tool)}<br><code>${esc(JSON.stringify(ev.args))}</code>`)); showThinking(`Running ${ev.tool}…`); }
+  else if(ev.type==="tool_result"){ addEvent(el("ev", `<span class="k">◀ result</span> ${esc(ev.tool)}<br><code>${esc(ev.preview)}</code>`)); showThinking("Analysing the numbers…"); }
+  else if(ev.type==="message"){ hideThinking(); addMsg("Agent", ev.text); }
+  else if(ev.type==="error"){ hideThinking(); addMsg("Error", ev.error); }
+  else if(ev.type==="approval_required"){ hideThinking(); approval(ev); }
+  else if(ev.type==="done"){ hideThinking(); }
 }
 
 function approval(ev){
