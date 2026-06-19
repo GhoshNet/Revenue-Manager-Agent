@@ -58,7 +58,9 @@ INSERT_ORDER = [
 
 
 def get_database_url() -> str:
-    return os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    # An empty/whitespace env value (e.g. an unset CI secret) should fall back to
+    # the default rather than silently connecting to a local unix socket.
+    return (os.environ.get("DATABASE_URL") or "").strip() or DEFAULT_DATABASE_URL
 
 
 def _insert_many(cur, table: str, rows: list[dict[str, Any]]) -> int:

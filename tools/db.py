@@ -19,7 +19,7 @@ DEFAULT_DATABASE_URL = "postgresql://hackathon:hackathon@localhost:5432/hotel_ha
 
 
 def get_database_url() -> str:
-    return os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    return (os.environ.get("DATABASE_URL") or "").strip() or DEFAULT_DATABASE_URL
 
 
 @contextmanager
