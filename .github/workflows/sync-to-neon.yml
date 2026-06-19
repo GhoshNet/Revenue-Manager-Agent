@@ -1,23 +1,21 @@
-name: daily-sync
+name: sync-to-neon
 
-# Keeps the deployed data current with the data site's daily anchor.
-# Runs the ETL against Neon (GitHub runners can reach port 5432), refreshes the
-# committed proofs, and pushes — which triggers a Render redeploy so /health
-# matches the live /verify for the current day. Run on a schedule and on demand
-# (Actions tab -> daily-sync -> Run workflow). No LLM calls; no local DB needed.
+# On-demand sync: run the ETL into Neon, refresh the committed proofs, and push —
+# which triggers a Render redeploy so /health matches the live /verify for the
+# current day. The brief does not require a daily cron ("once per build is fine"),
+# so this runs only when you trigger it (Actions tab -> sync-to-neon -> Run
+# workflow) — e.g. on submission day. No LLM calls; no local DB needed.
 #
 # Requires repo secret NEON_DATABASE_URL = your Neon connection string.
 
 on:
-  schedule:
-    - cron: "0 6 * * *"     # daily 06:00 UTC
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: daily-sync
+  group: sync-to-neon
   cancel-in-progress: false
 
 jobs:
@@ -29,6 +27,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Check NEON_DATABASE_URL secret is set
+        run: |
+          if [ -z "${{ secrets.NEON_DATABASE_URL }}" ]; then
+            echo "::error::NEON_DATABASE_URL secret is not set. Add it in Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
 
       - name: Install deps (ETL + browser)
         run: |
