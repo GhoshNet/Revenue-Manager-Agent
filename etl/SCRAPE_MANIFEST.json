@@ -1,13 +1,13 @@
 {
-  "anchor_date": "2026-06-19",
+  "anchor_date": "2026-06-21",
   "dataset_revision": "2026.06.12.2",
-  "scraped_at": "2026-06-19T00:50:34Z",
+  "scraped_at": "2026-06-21T02:19:05Z",
   "source_url": "https://otel-hackathon-data-site.vercel.app",
   "pages_scraped": 3,
   "reservation_ids_count": 254,
   "reservation_ids_sha256": "aea16e722cb664db652aafc238066566537dc2f9013d2b51b14dd5d22272e85c",
-  "total_stay_rows": 526,
-  "reservation_stay_status_sha256": "88c0e21cb1d89f4050b6dcbc9b76cec05a59d525a68914c6611c4b7ba544a4c7",
+  "total_stay_rows": 523,
+  "reservation_stay_status_sha256": "ec5cc91cf88a1f6209327ebafe8040dfd813f80b8bf8a69483d141d5c8b6b4d1",
   "reservations_reached": 254,
   "verify_total_reservations": 254,
   "notes": "reservation_ids_count must match count(distinct reservation_id) in DB and total_reservations on /verify. Reservations include the four edge-case ids (RES-EDGE-001..003, RES-ZEPHYR-7F3A) that the list UI does not render but the list server action returns."
