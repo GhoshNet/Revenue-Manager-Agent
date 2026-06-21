@@ -28,7 +28,7 @@ downstream has to remember it.
 |------|------|
 | `ATTESTATION.md` | Phase 0 comprehension answers + one-line ETL design |
 | `etl/` | `scrape.py` → `transform.py` → `load.py`, orchestrated by `run_etl.py`; proofs in `SCRAPE_MANIFEST.json` / `LOAD_PROOF.json` |
-| `sql/views.sql` | `vw_stay_night_base`, `vw_segment_stay_night` |
+| `sql/views.sql` | `vw_stay_night_base`, `vw_posted_stay_night`, `vw_segment_stay_night` |
 | `tools/` | the five required tools + `METRIC_DEFINITIONS.md` |
 | `skills/` | `SKILL.md` files (progressive disclosure) |
 | `agent/` | `create_deep_agent` wiring + server |
@@ -103,7 +103,8 @@ loads Postgres idempotently, writes `etl/SCRAPE_MANIFEST.json` +
 
 ```bash
 uvicorn agent.server:app --host 0.0.0.0 --port 8000
-# open http://localhost:8000  (basic auth: APP_USERNAME / APP_PASSWORD, default gm / harbour)
+# open http://localhost:8000  (basic auth: APP_USERNAME / APP_PASSWORD; local default gm / harbour)
+# In deployment, set real APP_USERNAME / APP_PASSWORD via env — credentials are never committed.
 ```
 
 The chat UI streams every **tool call** and **skill load** live in a side panel,
@@ -139,3 +140,11 @@ The web service needs only `requirements.txt` (no browser). Three pieces:
    `APP_USERNAME`, `APP_PASSWORD`. Never commit keys.
 3. **Verify**: `GET /health` on the live URL must match `etl/LOAD_PROOF.json` and the
    data site `/verify` for that day.
+
+**Automated sync & uptime (GitHub Actions).**
+- `.github/workflows/sync-to-neon.yml` (manual dispatch) re-runs the ETL into the
+  hosted DB, refreshes the committed proofs, and pushes — triggering a redeploy so
+  `/health` matches the day's `/verify`. Run it on submission day. Requires repo
+  secret `NEON_DATABASE_URL`.
+- `.github/workflows/keepalive.yml` pings `/health` every 10 min so a free-tier
+  instance stays awake.
