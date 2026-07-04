@@ -6,8 +6,11 @@ name: keepalive
 # add an UptimeRobot monitor on the same URL (5-min interval).
 
 on:
-  schedule:
-    - cron: "*/10 * * * *"   # every 10 minutes
+  # Scheduled pinging temporarily disabled while the project is paused.
+  # Re-enable by uncommenting the schedule block below (or trigger manually via
+  # the Actions tab -> keepalive -> Run workflow).
+  # schedule:
+  #   - cron: "*/10 * * * *"   # every 10 minutes
   workflow_dispatch:
 
 jobs:
