@@ -1,13 +1,50 @@
-# Revenue Manager Agent
+# AI Revenue Manager Agent
 
-An AI **Revenue Manager for a hotel General Manager**, built for the
-[otel-build-challenge](https://github.com/otel-ai/otel-build-challenge). It
+An LLM agent that acts as a **Revenue Manager for a hotel General Manager**. It
 answers natural-language commercial questions ("What's driving July?", "Are we
-too dependent on OTA?") from reservation data that this repo **scrapes itself**,
-behind a deployed chat UI that shows every tool and skill call.
+too dependent on OTA?", "What did September look like as of 1 June?") from
+reservation data that this repo scrapes, loads and models itself, behind a
+streaming chat UI that shows every tool and skill call as it happens.
 
-Pipeline: **ETL (scrape → load)** → **semantic views + typed tool layer** →
-**LangChain Deep Agent with skills** → **deployed UI**.
+The design goal is an agent whose numbers can be trusted: the model chooses
+*which* question to ask of the data, but the arithmetic, filters and business
+rules live in SQL views and typed Python tools, not in the prompt.
+
+## What it demonstrates
+
+- **Agent engineering.** A LangChain Deep Agent with on-demand skills, a
+  specialist subagent, planning, multi-turn memory and a human-in-the-loop
+  approval gate.
+- **Correctness below the model.** Five typed, parameterised SQL tools over
+  semantic views; the model never writes SQL. Different models return identical
+  figures because the logic is in code.
+- **Data engineering.** A Playwright ETL (scrape → transform → idempotent load)
+  that reconciles row counts and a SHA-256 fingerprint against the source.
+- **Security and guardrails.** A sandboxed agent, read-only data access, request
+  limits and sanitised output, documented with a threat model in `SECURITY.md`.
+- **Product surface.** A streaming chat UI with live tool visibility, pluggable
+  models (Gemini, Claude, Llama via Groq, local Ollama) and a cloud deployment.
+- **Testing.** 58 pytest tests across ETL, tools, skills, agent wiring and security.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  UI[Chat UI] -->|question| API[FastAPI server<br/>auth · limits · SSE]
+  API -->|run| AG[Deep Agent<br/>plan · approval gate]
+  AG -->|loads| SK[Skills<br/>read-only]
+  AG -->|delegates| SUB[Segment analyst<br/>subagent]
+  AG <-->|prompts / tool choices| LLM[Model provider]
+  AG -->|tool call| T[5 typed tools]
+  T -->|fixed SQL, read-only| V[Semantic views]
+  V --> DB[(PostgreSQL)]
+  SITE[Hotel data site] -.->|Playwright scrape| ETL[ETL]
+  ETL -.->|idempotent load + checksum| DB
+```
+
+Solid arrows are the request path; dotted arrows are the batch load, which is the
+only thing that writes data. `ARCHITECTURE.md` has the component detail and the
+skill → tool routing matrix; `SECURITY.md` has the trust boundaries.
 
 ## The one concept that matters most
 
@@ -26,16 +63,16 @@ downstream has to remember it.
 
 | Path | What |
 |------|------|
-| `ATTESTATION.md` | Phase 0 comprehension answers + one-line ETL design |
 | `etl/` | `scrape.py` → `transform.py` → `load.py`, orchestrated by `run_etl.py`; proofs in `SCRAPE_MANIFEST.json` / `LOAD_PROOF.json` |
 | `sql/views.sql` | `vw_stay_night_base`, `vw_posted_stay_night`, `vw_segment_stay_night` |
-| `tools/` | the five required tools + `METRIC_DEFINITIONS.md` |
-| `skills/` | `SKILL.md` files (progressive disclosure) |
-| `agent/` | `create_deep_agent` wiring + server |
+| `tools/` | the five data tools + `METRIC_DEFINITIONS.md` |
+| `skills/` | `SKILL.md` playbooks, loaded on demand (progressive disclosure) |
+| `agent/` | `create_deep_agent` wiring, model registry, server and chat UI |
 | `tests/` | `test_etl.py`, `test_tools.py`, `test_skills.py`, `test_agent.py`, `test_security.py` |
-| `schema.sql`, `docker-compose.yml` | DB schema + local Postgres (from the brief) |
-| `ARCHITECTURE.md` | one-page architecture + skill→tool routing matrix |
+| `schema.sql`, `docker-compose.yml` | DB schema + local Postgres |
+| `ARCHITECTURE.md` | one-page architecture + skill → tool routing matrix |
 | `SECURITY.md` | threat model, every guardrail and what it defends against, known gaps |
+| `ATTESTATION.md` | comprehension notes from the original challenge brief |
 
 ## Setup
 
@@ -43,19 +80,18 @@ downstream has to remember it.
 conda create -n otel python=3.12 -y && conda activate otel
 pip install -r requirements-etl.txt   # core + scraper (web host needs only requirements.txt)
 python -m playwright install chromium
-cp .env.example .env   # fill in ANTHROPIC_API_KEY etc.
+cp .env.example .env   # add a model key (GOOGLE_API_KEY is free) and optional settings
 ```
 
-**Database (local).** The brief ships a Docker Postgres:
+**Database (local).** Docker Compose starts Postgres with the schema applied:
 
 ```bash
 docker compose up -d            # Postgres on :5432, db hotel_hackathon
-psql "$DATABASE_URL" -f schema.sql
 psql "$DATABASE_URL" -f sql/views.sql
 ```
 
 (Any Postgres 16 reachable at `DATABASE_URL` works — e.g. a local
-`postgresql@16` service or a hosted Neon/Supabase instance for deployment.)
+`postgresql@16` service or a hosted Neon/Supabase instance.)
 
 ## Models (pluggable)
 
@@ -86,12 +122,13 @@ python -m etl.run_etl --no-scrape     # reuse newest cached scrape (dev)
 This scrapes the [data site](https://otel-hackathon-data-site.vercel.app),
 loads Postgres idempotently, writes `etl/SCRAPE_MANIFEST.json` +
 `etl/LOAD_PROOF.json`, and reconciles row counts and the
-`reservation_stay_status_sha256` against the live `/verify` page.
+`reservation_stay_status_sha256` against the site's `/verify` page.
 
-> **Anchor-date dependency.** The data site regenerates its dataset daily,
-> forward-looking from "today". Counts and checksums change each day, so
-> **re-run the ETL on the same day you load/deploy/submit** and reconcile
-> against `/verify` then.
+> **The source dataset moves.** The data site regenerates its dataset daily,
+> forward-looking from "today", so counts and checksums differ from one day's
+> scrape to the next. A load is a snapshot: the committed proofs describe the
+> load currently in the hosted database, and booking-pace windows are measured
+> from that load's own date rather than the wall clock.
 
 ## Two data-site subtleties handled by the ETL
 
@@ -102,8 +139,9 @@ loads Postgres idempotently, writes `etl/SCRAPE_MANIFEST.json` +
    returns all 254) rather than the rendered DOM, so nothing is lost.
 2. **Rate-plan codes.** Reservations carry ~16 granular commercial rate codes
    while `rate_plan_lookup` has 8 canonical families with no published mapping.
-   We keep the real code and drop only the `rate_plan_code` foreign key (the
-   `/verify` fingerprint does not depend on it). See `ARCHITECTURE.md`.
+   The ETL keeps the real code and drops only the `rate_plan_code` foreign key
+   rather than inventing a mapping (the fingerprint does not depend on it). See
+   `ARCHITECTURE.md`.
 
 ## Run the agent + UI
 
@@ -149,35 +187,56 @@ some time ago still answers them. Override with `DATA_AS_OF` (ISO-8601).
 ## Tests
 
 ```bash
-pytest                       # all 58
-pytest tests/test_etl.py     # ETL: grain, lookup counts, manifest reconciliation
-pytest tests/test_tools.py   # tool layer (against loaded Postgres)
-pytest tests/test_skills.py  # skill pack structure/judgment (no LLM calls)
-pytest tests/test_agent.py   # agent wiring: tool surface, HITL, routing
+pytest                         # all 58
+pytest tests/test_etl.py       # ETL: grain, lookup counts, manifest reconciliation
+pytest tests/test_tools.py     # tool layer (against loaded Postgres)
+pytest tests/test_skills.py    # skill pack structure/judgment (no LLM calls)
+pytest tests/test_agent.py     # agent wiring: tool surface, HITL, routing
 pytest tests/test_security.py  # sandbox, server limits, read-only DB (no LLM calls)
 ```
+
+The ETL tests compare the database with the committed proofs, so run them against
+the database those proofs describe (the hosted one, or a local one you have just
+loaded with `python -m etl.run_etl`).
 
 ## Deploy
 
 The web service needs only `requirements.txt` (no browser). Three pieces:
 
-1. **Hosted Postgres** (Neon/Supabase/Railway): create it, then on your machine run
-   `DATABASE_URL=<hosted> python -m etl.run_etl` (same day you deploy) so the live
-   DB matches the committed `LOAD_PROOF.json`, and apply `sql/views.sql`.
+1. **Hosted Postgres** (Neon/Supabase/Railway): create it, then run
+   `DATABASE_URL=<hosted> python -m etl.run_etl` so the database matches the
+   committed `LOAD_PROOF.json`, and apply `sql/views.sql`.
 2. **Web service** (Render/Railway/Fly): start command from the `Procfile`
-   (`uvicorn agent.server:app --host 0.0.0.0 --port $PORT`). Set env:
+   (`uvicorn agent.server:app --host 0.0.0.0 --port $PORT`); `render.yaml` is a
+   ready Render blueprint. Set env:
    `DATABASE_URL`, `GOOGLE_API_KEY` (and/or `ANTHROPIC_API_KEY`, `GROQ_API_KEY`),
    `AGENT_MODEL_ID`, `APP_USERNAME`, `APP_PASSWORD`. Never commit keys. The server
    will not start on a hosted platform without `APP_USERNAME` and `APP_PASSWORD`.
    For least privilege, create the read-only role in `sql/readonly_role.sql` and
    use it for the web service's `DATABASE_URL`.
-3. **Verify**: `GET /health` on the live URL must match `etl/LOAD_PROOF.json` and the
-   data site `/verify` for that day.
+3. **Verify**: `GET /health` on the live URL must match `etl/LOAD_PROOF.json`.
 
-**Automated sync & uptime (GitHub Actions).**
+**GitHub Actions.**
 - `.github/workflows/sync-to-neon.yml` (manual dispatch) re-runs the ETL into the
   hosted DB, refreshes the committed proofs, and pushes — triggering a redeploy so
-  `/health` matches the day's `/verify`. Run it on submission day. Requires repo
-  secret `NEON_DATABASE_URL`.
-- `.github/workflows/keepalive.yml` pings `/health` every 10 min so a free-tier
-  instance stays awake.
+  `/health` matches the new load. Requires repo secret `NEON_DATABASE_URL`.
+- `.github/workflows/keepalive.yml` pings `/health` so a free-tier instance stays
+  awake. It runs on manual dispatch; a 10-minute schedule is in the file, commented out.
+
+## Known limits
+
+Stated plainly, with the detail in `SECURITY.md`:
+
+- Conversations and rate limits are held in memory, so they reset on restart and
+  the app runs as a single instance.
+- One shared login; there are no per-user accounts.
+- No automated evaluation of answer quality against a live model; the test suite
+  covers everything below the model.
+- The dataset is a snapshot of a third-party demo site.
+
+## Background
+
+This started as a response to the
+[otel-build-challenge](https://github.com/otel-ai/otel-build-challenge) brief and
+has since been extended as a personal project, mainly with the security
+hardening, the Gemini integration and the as-of handling for booking pace.
