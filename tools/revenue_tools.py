@@ -14,10 +14,10 @@ Total revenue = daily_total_revenue_before_tax (room + extras).
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from tools.db import f, month_bounds, query, query_one, ratio
+from tools.db import data_as_of, f, month_bounds, query, query_one, ratio
 
 LONDON = ZoneInfo("Europe/London")
 
@@ -143,20 +143,24 @@ def get_pickup_delta(booking_window_days: int, future_stay_from: str) -> dict:
     The window is defined on create_datetime (booking date), NOT stay_date:
       [ start_of_day Europe/London (now - booking_window_days) , now ]
     converted to UTC for comparison against create_datetime (stored in UTC).
+    "now" is the dataset's as-of moment (the latest load), not the wall clock.
     Only stay rows with stay_date >= future_stay_from are counted. Universe is
     vw_stay_night_base (non-cancelled, Posted) — i.e. business still on the books.
     Counts are at stay-date grain; new_reservations is count(distinct reservation_id).
 
     Returns:
       - booking_window_days, future_stay_from
-      - window_start_utc, window_end_utc (echo of the resolved boundaries)
+      - window_start_utc, window_end_utc (echo of the resolved boundaries;
+        window_end_utc is the dataset's as-of moment)
       - new_reservations : count(distinct reservation_id) created in the window
       - new_room_nights  : sum(number_of_spaces)
       - new_total_revenue: sum(daily_total_revenue_before_tax)
       - by_segment: per market_code {market_code, market_name, room_nights,
                     total_revenue}, ordered by total_revenue desc
     """
-    now_utc = datetime.now(timezone.utc)
+    if not 0 <= booking_window_days <= 3660:
+        raise ValueError("booking_window_days must be between 0 and 3660")
+    now_utc = data_as_of().astimezone(timezone.utc)
     start_london = (now_utc.astimezone(LONDON) - timedelta(days=booking_window_days)).replace(
         hour=0, minute=0, second=0, microsecond=0
     )

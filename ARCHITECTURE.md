@@ -46,11 +46,12 @@ from semantic views, never `reservations_hackathon`:
 |------|---------|-------|
 | `get_otb_summary` | base / posted | row_count = stay rows (≠ reservations); `exclude_cancelled=False` uses posted view |
 | `get_segment_mix` | segment | effective macro group; shares share one denominator, sum to 1.0 |
-| `get_pickup_delta` | segment | window on `create_datetime` (Europe/London midnight → UTC); stays `>= future_stay_from` |
+| `get_pickup_delta` | segment | window on `create_datetime` (Europe/London midnight → UTC), ending at the dataset's as-of moment; stays `>= future_stay_from` |
 | `get_as_of_otb` | posted | point-in-time; cancellation-as-of logic; **human-gated** |
 | `get_block_vs_transient_mix` | base | `is_block` split; top-3 company concentration |
 
 No tool accepts a SQL string. Cancellation/provisional defaults live in the views.
+Tool connections are read-only with a statement timeout.
 Grain definitions: `tools/METRIC_DEFINITIONS.md`.
 
 ## 4. Deep Agents wiring (`agent/agent.py`)
@@ -61,9 +62,10 @@ Grain definitions: `tools/METRIC_DEFINITIONS.md`.
 | Skills | `skills/<name>/SKILL.md` loaded via `SkillsMiddleware` (progressive disclosure) |
 | Subagents | **`segment-analyst`** holds only `get_segment_mix` + `get_block_vs_transient_mix` |
 | Planning | built-in `write_todos` / todo middleware |
-| Memory / filesystem | thread `checkpointer` (multi-turn) + long-term `store` + `FilesystemBackend` (virtual writes) |
+| Memory / filesystem | thread `checkpointer` (multi-turn) + long-term `store` + a `CompositeBackend`: `skills/` on disk, read-only; everything else in per-thread state |
+| Sandbox | `HiddenToolsMiddleware` removes `write_file` / `edit_file` / `execute` from every model request |
 | Human-in-the-loop | `interrupt_on={"get_as_of_otb": True}` |
-| Model & prompt | `claude-sonnet-4-6` (configurable) + sharp RM persona / brief-§12 answer style |
+| Model & prompt | pluggable registry (Gemini / Claude / Groq / Ollama) + sharp RM persona / brief-§12 answer style + scope and injection boundaries |
 
 ## 5. Skill → tool routing matrix
 
@@ -90,6 +92,8 @@ numeric thresholds + recommended actions.
 - `tests/test_agent.py` (7) — exact 5-tool surface, HITL on `get_as_of_otb`
   (graph node + config), subagent isolation, multi-tool trace, on-demand skills,
   memory/filesystem (graph introspection + recorded fixture; no LLM).
+- `tests/test_security.py` (16) — agent sandbox, server request guardrails,
+  read-only tool connections, input validation (no LLM). See `SECURITY.md`.
 
 ## 7. Deployment topology
 
@@ -99,7 +103,8 @@ numeric thresholds + recommended actions.
   `financial_status_posted_only_rows` from `LOAD_PROOF.json`.
 - **UI**: an Agent Chat UI that streams tool/skill calls (loading a skill is a
   `read_file` tool call, so tool streaming surfaces skills). Basic auth on the
-  public URL; `ANTHROPIC_API_KEY` via deployment env, never committed.
+  public URL; model keys via deployment env, never committed. Request limits and
+  the full control list are in `SECURITY.md`.
 
 ## 8. Out of scope
 

@@ -4,7 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Revenue Manager Agent — Grand Harbour Hotel</title>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@18.1.0/lib/marked.umd.js" integrity="sha384-IvVdUXkhyoD0shbjhiiOnuiTbervTaB0VJcnEcg3shUAMVOOF6lKj4ozJrCwvz6s" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.16/dist/purify.min.js" integrity="sha384-a7SzOxErzJ3ZpQz0zJ32d67dSitNzPcbfybc/ykU9KJhMgZkwqfSxlhhdJRS+XGL" crossorigin="anonymous"></script>
 <style>
   :root { --bg:#0b1220; --panel:#121b2e; --line:#22304d; --txt:#e6edf7; --mut:#8aa0c0; --acc:#4f9dff; }
   * { box-sizing:border-box; }
@@ -60,7 +61,8 @@
   <h1>Revenue Manager Agent</h1>
   <span class="sub">Grand Harbour Hotel · on-the-books intelligence</span>
   <select id="model" title="Choose model">
-    <option value="claude-sonnet-4-6">Claude Sonnet 4.6 · accurate (default)</option>
+    <option value="gemini-flash-lite">Gemini 3.5 Flash-Lite · free (default)</option>
+    <option value="claude-sonnet-4-6">Claude Sonnet 4.6 · accurate</option>
     <option value="claude-haiku-4-5">Claude Haiku 4.5 · faster</option>
   </select>
 </header>
@@ -77,12 +79,14 @@
   <aside id="activity"><h2>Tools &amp; skills</h2><div id="events"></div></aside>
 </main>
 <footer><form id="f">
-  <input type="text" id="q" placeholder="Ask a revenue-manager question…" autocomplete="off" />
+  <input type="text" id="q" placeholder="Ask a revenue-manager question…" autocomplete="off" maxlength="2000" />
   <button id="send">Send</button>
 </form></footer>
 
 <script>
-let thread = "t-" + Math.random().toString(36).slice(2);
+// The thread id is the only handle on a conversation, so it must be unguessable.
+const newThread = ()=> crypto.randomUUID();
+let thread = newThread();
 const chat = document.getElementById("chat");
 const events = document.getElementById("events");
 const modelSel = document.getElementById("model");
@@ -99,14 +103,14 @@ function showThinking(label){
 }
 function hideThinking(){ if(thinkingEl){ thinkingEl.remove(); thinkingEl=null; } }
 function esc(s){ return (s||"").replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
-function addMsg(who, text, cls=""){ const body = (who==="Agent" && window.marked) ? marked.parse(text||"") : esc(text); const m=el("msg "+cls, `<div class="who">${who}</div><div class="body">${body}</div>`); chat.appendChild(m); chat.scrollTop=chat.scrollHeight; return m.querySelector(".body"); }
+function addMsg(who, text, cls=""){ const body = (who==="Agent" && window.marked && window.DOMPurify) ? DOMPurify.sanitize(marked.parse(text||"")) : esc(text); const m=el("msg "+cls, `<div class="who">${who}</div><div class="body">${body}</div>`); chat.appendChild(m); chat.scrollTop=chat.scrollHeight; return m.querySelector(".body"); }
 function addEvent(node){ events.appendChild(node); events.scrollTop=events.scrollHeight; }
 
-// Always start on Sonnet after a refresh (ignore any browser form-restore).
+// Always start on the default model after a refresh (ignore any browser form-restore).
 modelSel.selectedIndex = 0;
 // Switching model starts a fresh conversation so the two models never mix mid-thread.
 modelSel.onchange = ()=>{
-  thread = "t-" + Math.random().toString(36).slice(2);
+  thread = newThread();
   addMsg("System", "Switched to " + modelSel.options[modelSel.selectedIndex].text + " — new conversation.", "user");
 };
 
@@ -116,6 +120,7 @@ async function stream(url, payload){
   send.disabled = true; showThinking("Thinking…");
   try {
     const resp = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
+    if(!resp.ok){ const j = await resp.json().catch(()=>({})); throw new Error(typeof j.detail==="string" ? j.detail : "Request rejected ("+resp.status+")"); }
     const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf="";
     while(true){
       const {value, done} = await reader.read(); if(done) break;

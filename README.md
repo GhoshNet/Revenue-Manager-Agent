@@ -32,9 +32,10 @@ downstream has to remember it.
 | `tools/` | the five required tools + `METRIC_DEFINITIONS.md` |
 | `skills/` | `SKILL.md` files (progressive disclosure) |
 | `agent/` | `create_deep_agent` wiring + server |
-| `tests/` | `test_etl.py`, `test_tools.py`, `test_skills.py`, `test_agent.py` |
+| `tests/` | `test_etl.py`, `test_tools.py`, `test_skills.py`, `test_agent.py`, `test_security.py` |
 | `schema.sql`, `docker-compose.yml` | DB schema + local Postgres (from the brief) |
 | `ARCHITECTURE.md` | one-page architecture + skill→tool routing matrix |
+| `SECURITY.md` | threat model, every guardrail and what it defends against, known gaps |
 
 ## Setup
 
@@ -62,12 +63,17 @@ The chatbot is selectable (`agent/models.py`, `available_models()` for the UI):
 
 | Model id | Provider | Notes |
 |----------|----------|-------|
-| `claude-sonnet-4-6` / `claude-haiku-4-5` | Anthropic | recommended; needs `ANTHROPIC_API_KEY` |
+| `gemini-flash-lite` | Google | Gemini 3.5 Flash-Lite; free tier, UI default; needs `GOOGLE_API_KEY` ([AI Studio](https://aistudio.google.com/apikey)) |
+| `gemini-flash` | Google | Gemini 3.8 Flash; free tier allows only 20 requests/day, about two questions |
+| `claude-sonnet-4-6` / `claude-haiku-4-5` | Anthropic | most thorough briefings; needs `ANTHROPIC_API_KEY` |
 | `groq-llama-3.3-70b` / `groq-gpt-oss-20b` | Groq | open weights; needs `GROQ_API_KEY` — **free tier (8–12k TPM) is too small for this tool-heavy agent**, use Groq's paid tier |
 | `ollama-qwen2.5` / `ollama-llama3.1` | Ollama | local, free, no key (no token cap); install Ollama + `ollama pull qwen2.5` |
 
 Set the default with `AGENT_MODEL_ID` in `.env`. Live check:
-`AGENT_MODEL_ID=claude-haiku-4-5 python scripts/smoke_agent.py`.
+`AGENT_MODEL_ID=gemini-flash-lite python scripts/smoke_agent.py`.
+
+The server only accepts model ids from this registry whose key is configured;
+anything else is rejected.
 
 ## Run the ETL
 
@@ -108,23 +114,47 @@ uvicorn agent.server:app --host 0.0.0.0 --port 8000
 ```
 
 The chat UI streams every **tool call** and **skill load** live in a side panel,
-has a **model dropdown** (Claude / Groq / Ollama), and shows an **Approve / Reject**
+has a **model dropdown** (Gemini / Claude), and shows an **Approve / Reject**
 prompt when a question triggers the human-gated `get_as_of_otb`. Endpoints:
 
 - `GET /health` (open) — `db_fingerprint`, `dataset_revision`, `row_hash`,
   `financial_status_posted_only_rows` from `etl/LOAD_PROOF.json`.
-- `POST /chat`, `POST /resume` (auth) — SSE stream; `/resume` carries the HITL decision.
+- `POST /chat`, `POST /resume` (auth, rate-limited) — SSE stream; `/resume` carries
+  the HITL decision. Both need a `thread_id` of 20-64 URL-safe characters (the UI
+  generates a UUID) and a `model_id` from the registry.
 
 CLI smoke test (no UI): `python scripts/smoke_agent.py "Are we too dependent on OTA in August 2026?"`
+
+## Security and guardrails
+
+Summarised here; `SECURITY.md` has the threat model, the full list and the known gaps.
+
+- **Agent sandbox.** The agent can read `skills/` and nothing else on disk, cannot
+  write anywhere on disk, and is never offered file-write or shell tools.
+- **Data access.** Five fixed, parameterised query tools (no SQL from the model),
+  read-only database sessions with a statement timeout, validated inputs.
+- **Server.** Basic auth that refuses to start with default credentials when
+  hosted, a model allow-list, a 2,000-character message cap, unguessable thread
+  ids, per-client and daily rate limits, a request timeout and a graph step limit.
+  Provider errors are logged, not shown.
+- **Browser.** Model output is sanitised with DOMPurify; CDN scripts are pinned
+  with integrity hashes.
+- **Prompt.** The agent is scoped to this hotel's revenue data and told to treat
+  text inside tool results as data, not instructions.
+
+Booking-pace questions measure "the last N days" back from the dataset's own
+as-of moment (the latest load) rather than the wall clock, so a snapshot loaded
+some time ago still answers them. Override with `DATA_AS_OF` (ISO-8601).
 
 ## Tests
 
 ```bash
-pytest                       # all 42
+pytest                       # all 58
 pytest tests/test_etl.py     # ETL: grain, lookup counts, manifest reconciliation
 pytest tests/test_tools.py   # tool layer (against loaded Postgres)
 pytest tests/test_skills.py  # skill pack structure/judgment (no LLM calls)
 pytest tests/test_agent.py   # agent wiring: tool surface, HITL, routing
+pytest tests/test_security.py  # sandbox, server limits, read-only DB (no LLM calls)
 ```
 
 ## Deploy
@@ -136,8 +166,11 @@ The web service needs only `requirements.txt` (no browser). Three pieces:
    DB matches the committed `LOAD_PROOF.json`, and apply `sql/views.sql`.
 2. **Web service** (Render/Railway/Fly): start command from the `Procfile`
    (`uvicorn agent.server:app --host 0.0.0.0 --port $PORT`). Set env:
-   `DATABASE_URL`, `ANTHROPIC_API_KEY` (and/or `GROQ_API_KEY`), `AGENT_MODEL_ID`,
-   `APP_USERNAME`, `APP_PASSWORD`. Never commit keys.
+   `DATABASE_URL`, `GOOGLE_API_KEY` (and/or `ANTHROPIC_API_KEY`, `GROQ_API_KEY`),
+   `AGENT_MODEL_ID`, `APP_USERNAME`, `APP_PASSWORD`. Never commit keys. The server
+   will not start on a hosted platform without `APP_USERNAME` and `APP_PASSWORD`.
+   For least privilege, create the read-only role in `sql/readonly_role.sql` and
+   use it for the web service's `DATABASE_URL`.
 3. **Verify**: `GET /health` on the live URL must match `etl/LOAD_PROOF.json` and the
    data site `/verify` for that day.
 

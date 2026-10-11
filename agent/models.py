@@ -1,7 +1,7 @@
 """Pluggable model registry so the UI/user can switch chatbots.
 
-Includes paid (Anthropic Claude) and free/open-source options (Groq-hosted Llama,
-local Ollama). A model is usable when its provider package is importable and its
+Includes paid (Anthropic Claude) and free/open-source options (Google Gemini free
+tier, Groq-hosted Llama, local Ollama). A model is usable when its provider package is importable and its
 API key (if any) is set — `available_models()` reports this so the UI can show
 only working choices.
 
@@ -23,6 +23,16 @@ MODEL_REGISTRY: dict[str, dict] = {
         "spec": "anthropic:claude-haiku-4-5-20251001",
         "label": "Claude Haiku 4.5 — Anthropic (fast/cheap)",
         "needs_key": "ANTHROPIC_API_KEY",
+    },
+    "gemini-flash": {
+        "spec": "google_genai:gemini-3.8-flash",
+        "label": "Gemini 3.8 Flash — Google (free tier: 20 requests/day)",
+        "needs_key": "GOOGLE_API_KEY",
+    },
+    "gemini-flash-lite": {
+        "spec": "google_genai:gemini-3.5-flash-lite",
+        "label": "Gemini 3.5 Flash-Lite — Google (free tier, fastest)",
+        "needs_key": "GOOGLE_API_KEY",
     },
     "groq-llama-3.3-70b": {
         "spec": "groq:llama-3.3-70b-versatile",

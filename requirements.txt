@@ -10,6 +10,7 @@ deepagents>=0.6
 langchain-anthropic>=1.0
 langgraph>=1.0
 # Optional pluggable model providers:
+langchain-google-genai>=4.0  # Gemini (free tier via Google AI Studio key)
 langchain-groq>=0.2      # Groq (Llama 3.3 70B, GPT-OSS); free tier TPM is small
 langchain-ollama>=0.2    # local, free, no key
 

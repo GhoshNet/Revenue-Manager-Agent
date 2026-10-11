@@ -91,8 +91,8 @@ def test_memory_and_filesystem_configured(graph):
     assert graph.checkpointer is not None  # multi-turn thread memory
     assert graph.store is not None         # long-term cross-thread store
     from agent.agent import make_backend
-    from deepagents.backends import FilesystemBackend
-    assert isinstance(make_backend(), FilesystemBackend)
+    from deepagents.backends import CompositeBackend
+    assert isinstance(make_backend(), CompositeBackend)
 
 
 # --- Scenario 7 (bonus) — guardrail against a bad instruction --------------
